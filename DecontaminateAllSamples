@@ -1,0 +1,341 @@
+# -*- coding: utf-8 -*-
+### AV edited line 241
+
+
+# coding: utf-8
+
+# ## findPermutations()
+# #### A function that finds all the permutations +/- 1 of the control.  Input is the original array (a).  Output is an array (f) of all the permutations, each one listed in a column.
+# - a = original array (c0=otu, c1=ctrl, c2=sample)
+# - e = control and +/- 1 values
+# - f = all of the permutations (c0=perm1, c1=perm2, c2=perm3...)
+
+# In[ ]:
+
+def findPermutations(a):
+    """This function finds all the permutations, then determines the most conservative one."""
+
+    # Establish the array of the appropriate size to store the control +/- 1
+    b_row, b_col = np.shape(a)
+    e = np.empty([b_row, 3], dtype=int)
+
+    # Store the control and +/- values in an array --> e
+    sliceCtrl = a[:, 1]
+    numSamples = len(sliceCtrl)
+    i = 0
+    for ctrl in sliceCtrl:
+        e[i, 1] = ctrl
+        i += 1
+    i = 0
+    for ctrl in sliceCtrl:
+        e[i, 2] = ctrl + 1
+        i += 1
+    i = 0
+    for ctrl in sliceCtrl:
+        e[i, 0] = ctrl - 1
+        i += 1
+
+    # Make a tuple of lists, where each list corresponds a row in e
+    # Pass the tuple through itertools.product to find all permutations
+    i = 0
+    tempList = []
+    while i < numSamples:
+        row = e[i, :]
+        row = row.tolist()
+        tempList.append(row)
+        i += 1
+    tempTuple = (tempList)
+    permutationList = list(itertools.product(*tempTuple))
+
+    # Arrange all of the permutations in an array --> f
+    f = np.arange(numSamples)
+    for permutation in permutationList:
+        frow = np.asarray(permutation)
+        tempList = [f, frow]
+        tempTuple = (tempList)
+        f = np.vstack((tempTuple))
+    f = np.delete(f, 0, 0)
+    f = np.transpose(f)
+
+    return f
+
+
+# # makeA_new()
+# #### The makeA_new() function will take a permutation and put it in the format of original array, a. Input is a column in the permutation array (permSlice).  Output is an array (a_new) that is formatted just like a.
+#
+# - permSlice = one column that is numSamples tall
+# - a_new = original array format (c1=OTU, c2=column i of permutations, c3=samples)
+
+# In[ ]:
+
+def makeA_new(permSlice, a):
+    """ The makeA_new() function will take a permutation and put it in the format of original array, a. """
+
+    c0 = np.expand_dims(a[:, 0], axis=1)
+    c1 = np.expand_dims(permSlice, axis=1)
+    c2 = np.expand_dims(a[:, 2], axis=1)
+    a_new = np.concatenate((c0, c1, c2), axis=1)
+
+    numSamples, numCol = np.shape(a_new)
+    i = 0
+    while i < numSamples:
+        n = a_new[i, 1]
+        if n == 0:
+            a_new = np.delete(a_new, i, 0)
+            numSamples = numSamples - 1
+        else:
+            i += 1
+
+    return a_new
+
+
+# ## removeReadsMod()
+# #### This function will take in the original array (a_new) and remove the contaminants. It will also return the number of reads removed. Input is a_new.  Output is 2 variables - 'd' is an array that tells you the decontaminated number of reads.  'dsum' is the number of reads removed.
+#
+# - a: input array (c0=OTUs, c1=permutation, c2=sample)
+# - d: output array with decontaminated values (c0=OTUs, c1=decontamVals)
+# - dsum: number of reads removed using that permutation
+# - b = ratios indicating number of common reads
+# - c = after subtracting out the common reads from the samples
+
+# In[ ]:
+
+def removeReadsMod(a):
+    """This is the algorithm that removes contaminants as labeled by our ratio method"""
+
+    # If there is only one OTU, then no ratio analysis can be done.  Return original values.
+    # Otherwise, run the ratio analysis.
+    arow, bcol = np.shape(a)
+    if arow == 1:
+        d = np.delete(a, [1])
+        dsum = d[1]
+        return (d, dsum)
+    else:
+        # Establish the array of the appropriate size to hold all the ratios
+        b_row, b_col = np.shape(a)
+        b_col = b_row + 1
+        b = np.empty([b_row, b_col], dtype=int)
+
+        # Assign first column as the otus
+        otus = a[:, 0]
+        i = 0
+        for otu in otus:
+            b[i, 0] = otu
+            i += 1
+
+            # Determine ratios --> store in b
+        sliceCtrl = a[:, 1]
+        sliceSmpl = a[:, 2]
+        numSamples = len(sliceSmpl)
+        I = 0
+        while I < numSamples:
+            i = 0
+            for ctrl in sliceCtrl:
+                b[i, I + 1] = sliceSmpl[I] * sliceCtrl[i] / sliceCtrl[I]
+                i += 1
+            I += 1
+
+        # Subtract out the common reads from the sample --> store in c
+        c = np.copy(b)
+        I = 1
+        while I <= numSamples:
+            sliceb = b[:, I]
+            i = 0
+            for smpl in sliceSmpl:
+                c[i, I] = smpl - sliceb[i]
+                i += 1
+            I += 1
+
+        # Determine the final decontaminated values --> store in d
+        d = np.arange(numSamples).reshape(numSamples, 1)  # choose the ratio with the highest number of reads removed
+        i = 0
+        for otu in otus:
+            d[i, 0] = otu
+            i += 1
+
+        I = 1
+        while I <= numSamples:
+            i = 0
+            while i < numSamples:
+                if c[i, I] < 0:
+                    break
+                if c[i, I] >= 0:
+                    i += 1
+                if i == numSamples - 1:
+                    decontamVals = c[:, I]
+            I += 1
+
+        r, c = d.shape
+        if c > 1:
+            print("You have more than 1 available ratio to choose from.")
+            decontamValsTemp = np.arange(numSamples).reshape(numSamples, 1)
+            i = 0
+            for vals in decontamVals:
+                decontamValsTemp[i, 0] = vals
+            d = np.concatenate((d, decontamValsTemp), axis=1)
+        else:
+            decontamValsTemp = np.arange(numSamples).reshape(numSamples, 1)
+            i = 0
+            for vals in decontamVals:
+                decontamValsTemp[i, 0] = vals
+                i += 1
+            d = np.concatenate((d, decontamValsTemp), axis=1)
+
+        # Determine dsum, which is the number of reads removed
+        origSample = a[:, 2]
+        decontamVals = d[:, 1]
+        numReadsRemoved = np.subtract(origSample, decontamVals)
+        dsum = np.sum(numReadsRemoved)
+
+        return (d, dsum)
+
+
+# ## findMostConserv()
+#
+# #### The findMostConserv() function will find the most conservative permutation.  Input is d_list and dsum_list.  Output is a 2-column array called finalReads that states final number of reads and corresponding OTUs, as well as a summary of the findings.
+#
+# - d_list = a list of d arrays, one for each permutation
+# - dsum_list = a list of the sums of number of reads removed, one for each permutation
+# - d = a 2-column array (col0=otus, col1=sample)
+# - finalReads = a 2-column array (col0=otus, col1=final number of reads)
+
+# In[ ]:
+
+def findMostConserv(d_list, dsum_list, a):  # AV edited: was findMostConserv(d_list, dsum_list):
+    """ The findMostConserv() function will find the most conservative permutation. """
+
+    # Find the indices where the maxdsum resides in dsum_list and return them in an array called indicesOfMax
+    maxdsum = max(dsum_list)  # maximum number of reads removed from all OTUs in a permutation
+    indicesOfMax = [index for index, element in enumerate(dsum_list) if
+                    element == maxdsum]  # list of indices where the maxdsum can be found
+    numIndicesOfMax = len(indicesOfMax)  # number of permutations with the same maxdsum
+
+    # If there is only one item in indicesOfMax, return the item of d_list with that index. (i.e. does not need to be averaged)
+    if len(indicesOfMax) == 1:
+        finalReads = d_list[indicesOfMax[0]]
+        print("There was only 1 permutation that gave the most conservative decontamination.")
+        print("The permutation removed " + str(maxdsum) + " reads total.")
+        # return finalReads, but for now, we shall use print.
+        return finalReads
+
+        # If there is >1 item in indicesOfMax...
+        # index 0 = raw data with no permutations
+        # AND one of the indices=0 (ie the original ctrl vals give the most conservative decontamination), return original d.
+        # OTHERWISE, average the final read amounts of the permutations in indicesOfMax.
+    if len(indicesOfMax) > 1:
+        if 0 in indicesOfMax:  # AV edited, was an else statement with a for loop
+            print(
+            "There were " + str(numIndicesOfMax) + " permutations that gave the most conservative decontamination.")
+            print(
+            "However, one of these permutations was the original control values, so we will use the original values.")
+            print("It removed " + str(maxdsum) + " reads total.")
+            finalReads = d_list[0]
+            return finalReads
+        else:
+            print(
+            "There were " + str(numIndicesOfMax) + " permutations that gave the most conservative decontamination.")
+            print("None of these permutation was the original control values.")
+            print("Thus, we will average the decontamination output for these permutations.")
+
+            # indicesOfMax = ex: [2,6,19]
+            # d_list = list of d arrays
+            # d_list_MaxOnly = list of d arrays, only the ones with indicesOfMax
+
+            # Extract the d arrays from d_list and put them in d_list_MaxOnly
+            d_list_MaxOnly = []
+            for index in indicesOfMax:
+                dMax = d_list[index]
+                d_list_MaxOnly.append(dMax)  # was d_list_MaxOnly = d_list_MaxOnly.append(dMax)
+
+            # Average the items in d_list_MaxOnly
+            avg_array = np.mean(d_list_MaxOnly, axis=0)  # AV edits
+            finalReads = avg_array.astype(int)  # AV edit
+            return finalReads
+
+
+# ## decontaminate()
+# #### The decontaminate() function will run the entire decontamination analysis on a given data set, a. Input is the original array (a).  The output is a 2 column array (finalVals) that gives the OTUs and corresponding decontaminated values.
+#
+# - a = original array (c0=otu, c1=ctrl, c2=sample)
+# - finalVals = (c0=OTUs, c1=decontaminated values for each OTU)
+
+# In[ ]:
+
+def decontaminate(a):
+    """ The decontaminate() function will run the entire decontamination anlysis on a given data set, a."""
+
+    # Find all permutations of +/- 1 of the control and return it in an array called 'permutations'
+    permutations = findPermutations(a)
+
+    # Begin a list that will hold all contamination outputs for all permutations (d_list)
+    # Do the same for the number of reads removed (dsum_list)
+    # The first item in each of these lists will be the original values
+    dOrig, dsumOrig = removeReadsMod(a)
+    d_list = [dOrig]  # is a list of "d" arrays for all possible permutation
+    dsum_list = [dsumOrig]
+
+    # For each permutation, run through makeA_new and removeReads().
+    # Add each permutation output to d_list and dsum_list
+    numSamples, numCol = np.shape(a)
+    I = 0
+    while I < 3 ** numSamples:
+        permSlice = permutations[:, I]
+        a_new = makeA_new(permSlice, a)
+        d, dsum = removeReadsMod(a_new)
+        d_list.append(d)
+        dsum_list.append(dsum)  # how many reads total over all the OTUs were removed for each d array
+        # If the largest dsum_list is the same for multiple array, need to average across all arrays with the highest dsum
+        I += 1
+
+    # Find the most conservative decontamination
+    finalReads = findMostConserv(d_list, dsum_list, a)  # was finalReads = findMostConserv(d_list, dsum_list)
+
+    return finalReads
+
+
+# # Test your code here
+# EXAMPLE
+# a = np.loadtxt('C:\Ashley\Publications\Pub_Esoph V4 vs V34\Python code from Chia postdoc Jessica Saw LG_7_26_16\examples and info from Jessica\V34_otu_h20_s107_8_19_16.csv', delimiter=',', dtype=int)
+# finalReads = decontaminate(a)
+# np.savetxt('postContam.csv', finalReads, fmt='%i', delimiter=',')
+# print(finalReads)
+
+
+import numpy as np
+import itertools
+from StringIO import StringIO
+import os
+import re
+
+# set WD for files
+os.chdir(
+    'C:/Ashley/Publications/Pub_Esoph V4 vs V34/Python code from Chia postdoc Jessica Saw LG_7_26_16/for_python_decontam')
+
+# make a list of all files in WD
+listOFarrays = []
+for filename in os.listdir(os.getcwd()):
+    listOFarrays.append(filename)
+
+# create arrays for decontam
+c = str()
+array = []  # import as OTU, water reads, sample reads
+counter = 0
+
+for i in listOFarrays[3:5]:
+    print(i)
+    counter += 1
+    print(counter)
+    os.chdir(
+        'C:/Ashley/Publications/Pub_Esoph V4 vs V34/Python code from Chia postdoc Jessica Saw LG_7_26_16/for_python_decontam')
+    c = re.sub('\.txt$', '_decontam.csv', i)  # c now is the name of file with '.csv' instead of '.txt'
+    array = np.loadtxt(i, delimiter='\t', dtype=int)  # load each file seperately as obj 'array'
+    print(array)
+    finalReads = decontaminate(array)  # run decontam on the array
+    os.chdir(
+        'C:/Ashley/Publications/Pub_Esoph V4 vs V34/Python code from Chia postdoc Jessica Saw LG_7_26_16/for_python_decontam/results')
+    np.savetxt(c, finalReads, fmt='%i', delimiter=',')
+
+# did not work for v34_140 (3), v34_175 (8), v34_192 (9), V34_193 (10) only 1 row, V34_227 (12), v34_32 (16) only 1 row, V34_42 (18),
+# v4_107 (24), v4_141 (27), v4_150 (29) took forever, v4_174 (30) took forever, v4_175 (31) took forever, v4_192 (32), v4_193 (33) took forever,
+
+# if it only has one OTU then don't run it
